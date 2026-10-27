@@ -1,9 +1,50 @@
 {
-  "name": "opencode-codex-usage",
-  "private": true,
+  "name": "@shuaijunwu/opencode-codex-usage",
+  "version": "0.1.0",
+  "description": "OpenCode V2 plugin: Codex 5-hour and weekly quota in the TUI status bar, plus a read-only usage tool and CLI.",
   "type": "module",
+  "license": "MIT",
+  "author": "shuaijunwu",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shuaijunwu/opencode-codex-usage.git"
+  },
+  "homepage": "https://github.com/shuaijunwu/opencode-codex-usage#readme",
+  "bugs": {
+    "url": "https://github.com/shuaijunwu/opencode-codex-usage/issues"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "codex",
+    "chatgpt",
+    "quota",
+    "usage",
+    "tui"
+  ],
   "exports": {
     ".": "./index.ts",
     "./tui": "./tui.tsx"
+  },
+  "bin": {
+    "codex-usage": "./bin/codex-usage"
+  },
+  "files": [
+    "index.ts",
+    "tui.tsx",
+    "quota.ts",
+    "quota-api.ts",
+    "bin/codex-usage",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@opencode/plugin": "^2.0.12"
+  },
+  "peerDependencies": {
+    "solid-js": ">=1.9.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

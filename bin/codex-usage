@@ -18,8 +18,8 @@ import time
 import urllib.error
 import urllib.request
 
-AUTH_FILE = os.path.expanduser("~/.codex/auth.json")
-VERSION_FILE = os.path.expanduser("~/.codex/version.json")
+AUTH_FILE = os.path.join(os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex"), "auth.json")
+VERSION_FILE = os.path.join(os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex"), "version.json")
 URL = "https://chatgpt.com/backend-api/wham/usage"
 TIMEOUT = 8
 DEFAULT_UA = "codex_cli_rs/0.164.0"

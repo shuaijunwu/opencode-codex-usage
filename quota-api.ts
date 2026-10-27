@@ -37,7 +37,7 @@ export type UsageSnapshot = {
   source: "http" | "app-server"
 }
 
-export const CODEX_HOME = path.join(os.homedir(), ".codex")
+export const CODEX_HOME = process.env.CODEX_HOME?.trim() || path.join(os.homedir(), ".codex")
 export const CODEX_AUTH = path.join(CODEX_HOME, "auth.json")
 
 const CODEX_BIN = process.env.CODEX_CLI_BIN || "codex"

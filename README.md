@@ -1,120 +1,137 @@
-# codex-usage
+# opencode-codex-usage
 
-只读的 Codex 额度工具集：OpenCode TUI 状态栏 + `codex_usage` 工具 + 独立命令行脚本。
+OpenCode V2 plugin that shows your **Codex 5-hour and weekly quota** in the TUI status bar, plus a read-only `codex_usage` tool and a standalone CLI.
 
-## 三种用法
+- Status bar: `5h 22% · 7d 79%` (remaining), auto-hidden for non-OpenAI models
+- `ctrl+u` or `/codex-usage`: dialog with reset times, credits and reset coupons
+- No polling: refreshes on startup, after each turn, on model switch, and manually
+- Uses the same endpoint as the Codex CLI (`chatgpt.com/backend-api/wham/usage`), with `codex app-server` fallback
 
-| 入口 | 用途 |
-|---|---|
-| TUI 状态栏 | 使用 `openai/*` 模型时，输入框下方显示 `5h 22% · 7d 79%` |
-| `ctrl+u` / `/codex-usage` | 弹窗查看重置时间、credits、重置券，并强制刷新 |
-| `codex_usage` 工具 | agent 读取，附带账号和 OpenCode 连接诊断 |
-| `codex-usage` 命令 | 不依赖 OpenCode，终端直接查 |
+## Install
 
-## 独立脚本（不依赖 OpenCode）
-
-`bin/codex-usage` 已软链到 `~/.local/bin/codex-usage`：
-
-```sh
-codex-usage             # 5h 7% · 7d 77%
-codex-usage --detail    # 重置时间、credits、重置券
-codex-usage --json      # 接口原始返回
-codex-usage --no-color  # 管道输出时自动禁用颜色
+```bash
+opencode plugin add github:shuaijunwu/opencode-codex-usage
 ```
 
-只依赖 Python 3 和 `~/.codex/auth.json`。OpenCode 升级或插件失效时，这个脚本仍然可用。
+Or add it manually to `~/.config/opencode/opencode.json`:
 
-## 显示与刷新
+```json
+{
+  "plugins": ["github:shuaijunwu/opencode-codex-usage"]
+}
+```
 
-- 只在当前会话模型属于 `providers`（默认 `["openai"]`）时显示；其他 provider 不消耗这份额度。
-- 刷新时机：启动、每轮助手结束（去抖 5s）、切到 `openai` 模型、手动 `ctrl+u`。**没有定时轮询**。
-- 标记：`⟳` 刷新中，`!` 刷新失败（显示上次值），`*` 数据超过 15 分钟。
-- 冷启动先读磁盘缓存，再后台刷新，不会出现空白等待。
+Restart OpenCode after installing.
 
-可选配置（在 `opencode.json` 的 `plugins` 里以对象形式声明时生效）：
+### Requirements
+
+- OpenCode **2.1+** (the TUI plugin API is new in 2.1)
+- Codex CLI installed and logged in (`codex login`)
+- macOS or Linux
+- The status bar appears only for models whose provider is `openai` (that is what consumes Codex quota)
+
+## Usage
+
+| Entry | What it does |
+|---|---|
+| Status bar | `5h 22% · 7d 79%` under the prompt, same colors as the rest of the TUI |
+| `ctrl+u` / `/codex-usage` | Full detail + force refresh, inside a dialog |
+| `codex_usage` tool | Lets the agent read the same quota |
+
+Markers: `⟳` refreshing, `!` refresh failed (last value kept), `*` data older than 15 minutes.
+
+### Configuration
+
+If you install by path, options can be passed through `opencode.json`:
 
 ```json
 {
   "plugins": [
     {
-      "package": "/Users/you/.config/opencode/plugins/codex-usage",
-      "options": { "providers": ["openai"], "alwaysShow": false, "debounceMs": 5000 }
+      "package": "/path/to/opencode-codex-usage",
+      "options": {
+        "providers": ["openai"],
+        "alwaysShow": false,
+        "debounceMs": 5000
+      }
     }
   ]
 }
 ```
 
-## 数据来源
+## Standalone CLI
 
-1. `https://chatgpt.com/backend-api/wham/usage`：Codex CLI 自己使用的额度接口，
-   带 `Authorization: Bearer <~/.codex/auth.json>` 和 `chatgpt-account-id`，约 1–2s。
-2. 401、超时或 5xx：回退 `codex app-server` 的 `account/rateLimits/read`，
-   真实 `~/.codex` 下会顺带刷新 token。
-3. 60s 进程内缓存 + `~/.cache/opencode/codex-usage.json` 冷启动缓存。
-4. `codex_usage` 工具额外读取 `~/.config/opencode-multi-auth/accounts.json`
-   和 OpenCode OpenAI 连接，用于诊断账号归属。
+`bin/codex-usage` does not need OpenCode:
 
-User-Agent 跟随本机 codex 版本（`~/.codex/version.json` → `codex --version` → 兜底），
-可用 `CODEX_CLI_USER_AGENT` 覆盖。
+```bash
+./bin/codex-usage             # 5h 96% · 7d 76%
+./bin/codex-usage --detail    # reset times, credits, reset coupons
+./bin/codex-usage --json      # raw API response
+```
 
-## 升级兼容
+Put it on your `PATH` if you like:
 
-- 状态栏依赖 OpenCode V2 CLI 插件 API。升级后若不再显示，只影响 UI：
-  `codex_usage` 工具和独立脚本仍然可用。
-- TUI `setup` 做了能力检测和 `try/catch`：缺 slot、dialog、事件或 keymap 时自动降级
-  （弹窗缺失改用 toast，状态栏缺失只记录日志），不会影响 TUI 启动。
-- 渲染函数也有 `try/catch`，单帧异常返回 `null`，不会让界面崩掉。
-- 升级后检查：
+```bash
+ln -sf "$PWD/bin/codex-usage" ~/.local/bin/codex-usage
+```
 
-```sh
-opencode plugin list
+It requires Python 3 and `~/.codex/auth.json` (respects `CODEX_HOME`).
+
+## How it reads quota
+
+1. `GET https://chatgpt.com/backend-api/wham/usage` with the token from `~/.codex/auth.json`
+   (same endpoint the Codex CLI uses).
+2. On 401/timeout/5xx it falls back to `codex app-server` → `account/rateLimits/read`,
+   which also refreshes an expired token.
+3. 60 s in-process cache plus `~/.cache/opencode/codex-usage.json` for instant cold starts.
+
+User-Agent follows the installed Codex version (`~/.codex/version.json` → `codex --version`),
+overridable with `CODEX_CLI_USER_AGENT`.
+
+## Privacy
+
+The plugin is read-only with respect to your credentials and configuration:
+
+- never switches accounts or edits tokens
+- never changes providers/models
+- sends the token only to `chatgpt.com` (the same place the Codex CLI sends it)
+- writes only its own cache file
+
+## Development
+
+```bash
+# load the working copy instead of the installed package
+# ~/.config/opencode/opencode.json
+{ "plugins": ["/path/to/opencode-codex-usage"] }
+
 opencode reload
+```
+
+Or symlink it into the auto-discovered plugin directory:
+
+```bash
+ln -sfn /path/to/opencode-codex-usage ~/.config/opencode/plugins/codex-usage
+```
+
+Do not load the GitHub install and the local path at the same time — you would get two copies of the status bar.
+
+## Compatibility
+
+TUI APIs are new in OpenCode 2.1 and may change. The plugin degrades instead of breaking:
+
+- `setup` and every slot render are wrapped in `try/catch`
+- missing dialog falls back to a toast; missing status-bar APIs only log
+- the `codex_usage` tool and the standalone CLI keep working even if the TUI part breaks
+
+If a status bar disappears after an OpenCode upgrade, check:
+
+```bash
+opencode plugin list
 grep -i "failed to load plugin" ~/.local/share/opencode/log/opencode.log | tail
-codex-usage            # 独立脚本仍可用
 ```
 
-## 版本管理
+The quota endpoint is internal and undocumented; if it changes, the `codex app-server` fallback takes over.
 
-本目录是独立 git 仓库。升级 OpenCode 前后可用 `git diff`、`git log` 对照改动；
+## License
 
-```sh
-cd ~/.config/opencode/plugins/codex-usage
-git status
-git diff
-```
-
-## 只读保证
-
-插件不会：
-
-- 切换 active 账号
-- 修改 Authorization/header
-- 修改 provider 或 model 配置
-- 修改 OpenAI 凭据
-
-只调用本地 `codex app-server` 或读取本地 JSON/SQLite；写操作仅限自己的缓存文件。
-
-## 依赖
-
-- OpenCode 2.1.x
-- 本机安装 `codex` CLI（HTTP 失败时兜底）
-- Python 3（仅独立脚本）
-
-## 排错
-
-```sh
-opencode plugin list
-opencode reload
-```
-
-TUI 插件加载标记（仅调试时）：
-
-```sh
-CODEX_USAGE_TUI_DEBUG=/tmp/codex-usage-tui.log opencode
-```
-
-查看日志：
-
-```sh
-tail -f ~/.local/share/opencode/log/opencode.log
-```
+MIT
