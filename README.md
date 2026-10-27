@@ -9,19 +9,28 @@ OpenCode V2 plugin that shows your **Codex 5-hour and weekly quota** in the TUI 
 
 ## Install
 
+### Full install (status bar + tool) — recommended
+
+```bash
+git clone https://github.com/shuaijunwu/opencode-codex-usage \
+  ~/.config/opencode/plugins/codex-usage
+```
+
+Restart OpenCode. To update later:
+
+```bash
+git -C ~/.config/opencode/plugins/codex-usage pull && opencode reload
+```
+
+### Registry install (tool + CLI only)
+
 ```bash
 opencode plugin add github:shuaijunwu/opencode-codex-usage
 ```
 
-Or add it manually to `~/.config/opencode/opencode.json`:
-
-```json
-{
-  "plugins": ["github:shuaijunwu/opencode-codex-usage"]
-}
-```
-
-Restart OpenCode after installing.
+On OpenCode 2.1.x, package plugins are installed under `~/.cache/opencode/`, where TUI plugins
+do not receive the host's OpenTUI runtime yet. The `codex_usage` tool and the standalone CLI work,
+but the status bar only loads from a local plugin directory — use the full install above for that.
 
 ### Requirements
 
