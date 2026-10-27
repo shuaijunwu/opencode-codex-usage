@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+"""Codex 5 小时 / 周额度查询，独立于 OpenCode。
+
+用法：
+  codex-usage            单行：5h 22% · 7d 79%
+  codex-usage --detail   详细：重置时间、credits、重置券
+  codex-usage --json     原始接口返回
+  codex-usage --no-color 禁用颜色（管道输出时自动禁用）
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.request
+
+AUTH_FILE = os.path.expanduser("~/.codex/auth.json")
+VERSION_FILE = os.path.expanduser("~/.codex/version.json")
+URL = "https://chatgpt.com/backend-api/wham/usage"
+TIMEOUT = 8
+DEFAULT_UA = "codex_cli_rs/0.164.0"
+COLORS = {"ok": "\033[32m", "warn": "\033[33m", "bad": "\033[31m", "muted": "\033[90m"}
+
+
+def fail(message: str, code: int = 1) -> "None":
+    print(message, file=sys.stderr)
+    raise SystemExit(code)
+
+
+def load_auth() -> tuple[str, str | None]:
+    try:
+        with open(AUTH_FILE, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except FileNotFoundError:
+        fail("未找到 ~/.codex/auth.json，请先登录 Codex CLI")
+    except Exception as error:  # noqa: BLE001
+        fail(f"读取 auth.json 失败：{error}")
+
+    tokens = data.get("tokens") or data
+    access = tokens.get("access_token") or tokens.get("accessToken")
+    if not access:
+        fail("auth.json 中没有 access_token，请先登录 Codex CLI")
+    return access, tokens.get("account_id")
+
+
+def user_agent() -> str:
+    override = os.environ.get("CODEX_CLI_USER_AGENT")
+    if override:
+        return override
+    try:
+        with open(VERSION_FILE, encoding="utf-8") as handle:
+            version = json.load(handle).get("latest_version")
+        if version:
+            return f"codex_cli_rs/{version}"
+    except Exception:  # noqa: BLE001
+        pass
+    return DEFAULT_UA
+
+
+def fetch(access: str, account: str | None) -> dict:
+    headers = {
+        "Authorization": f"Bearer {access}",
+        "User-Agent": user_agent(),
+        "originator": "codex_cli_rs",
+        "Accept": "application/json",
+    }
+    if account:
+        headers["chatgpt-account-id"] = account
+
+    request = urllib.request.Request(URL, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8", "replace").strip()[:160]
+        hint = "（可能需要重新 codex login）" if error.code in (401, 403) else ""
+        fail(f"HTTP {error.code}{hint}: {body}")
+    except urllib.error.URLError as error:
+        fail(f"网络错误：{error.reason}")
+    except TimeoutError:
+        fail(f"请求超时（{TIMEOUT}s）")
+
+
+def window(raw: dict | None) -> dict | None:
+    if not raw:
+        return None
+    used_value = raw.get("used_percent")
+    used = float(used_value) if isinstance(used_value, (int, float)) else None
+    remain = None if used is None else max(0.0, min(100.0, 100.0 - used))
+    return {"used": used, "remain": remain, "reset": raw.get("reset_at")}
+
+
+def pct(value: float | None) -> str:
+    if value is None:
+        return "—"
+    return f"{value:.0f}%" if float(value).is_integer() else f"{value:.1f}%"
+
+
+def reset_at(epoch: int | None) -> str:
+    if not isinstance(epoch, (int, float)) or not epoch:
+        return "未知"
+    return time.strftime("%m/%d %H:%M", time.localtime(epoch))
+
+
+def level(primary: dict | None, secondary: dict | None) -> str:
+    values = [item["remain"] for item in (primary, secondary) if item and item["remain"] is not None]
+    if not values:
+        return "muted"
+    lowest = min(values)
+    if lowest <= 10:
+        return "bad"
+    if lowest <= 20:
+        return "warn"
+    return "ok"
+
+
+def paint(text: str, name: str, enabled: bool) -> str:
+    if not enabled:
+        return text
+    return f"{COLORS.get(name, '')}{text}\033[0m"
+
+
+def credits_line(data: dict) -> str | None:
+    parts: list[str] = []
+    credits = data.get("credits") or {}
+    if credits.get("unlimited"):
+        parts.append("Credits：无限")
+    elif credits.get("has_credits"):
+        balance = credits.get("balance")
+        try:
+            parts.append(f"Credits：{float(balance):.2f}".rstrip("0").rstrip("."))
+        except (TypeError, ValueError):
+            parts.append("Credits：有")
+
+    resets = (data.get("rate_limit_reset_credits") or {}).get("available_count")
+    if isinstance(resets, int) and resets > 0:
+        parts.append(f"重置券：{resets}")
+    return " · ".join(parts) if parts else None
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="codex-usage",
+        description="查询 Codex 5 小时 / 周额度（只读）",
+    )
+    parser.add_argument("--detail", action="store_true", help="显示重置时间、credits、重置券")
+    parser.add_argument("--json", action="store_true", help="输出接口原始 JSON")
+    parser.add_argument("--no-color", action="store_true", help="禁用颜色")
+    args = parser.parse_args()
+
+    access, account = load_auth()
+    data = fetch(access, account)
+
+    if args.json:
+        print(json.dumps(data, ensure_ascii=False, indent=2))
+        return
+
+    rate_limit = data.get("rate_limit") or {}
+    primary = window(rate_limit.get("primary_window"))
+    secondary = window(rate_limit.get("secondary_window"))
+
+    color = not args.no_color and sys.stdout.isatty()
+    tone = level(primary, secondary)
+
+    if args.detail:
+        lines: list[str] = []
+        who = " · ".join(str(item) for item in (data.get("plan_type"), data.get("email")) if item)
+        if who:
+            lines.append(who)
+        for label, item in (("5 小时", primary), ("周限额", secondary)):
+            if not item:
+                lines.append(f"{label}：未知")
+                continue
+            lines.append(f"{label}：剩余 {pct(item['remain'])}（已用 {pct(item['used'])}）· {reset_at(item['reset'])} 重置")
+        extra = credits_line(data)
+        if extra:
+            lines.append(extra)
+        if rate_limit.get("limit_reached") or data.get("rate_limit_reached_type"):
+            lines.append("⚠ 当前已达到额度限制")
+        print(paint("\n".join(lines), tone, color))
+        return
+
+    line = f"5h {pct(primary['remain'] if primary else None)} · 7d {pct(secondary['remain'] if secondary else None)}"
+    print(paint(line, tone, color))
+
+
+if __name__ == "__main__":
+    main()
